@@ -1,0 +1,20 @@
+{
+    "BTC": {
+        "chain_id": 0,
+        "rpc_url": "https://blockstream.info/api",
+        "symbol": "BTC",
+        "network_type": "UTXO"
+    },
+    "ETH": {
+        "chain_id": 1,
+        "rpc_url": "https://mainnet.infura.io/v3/YOUR_INFURA_API_KEY",
+        "symbol": "ETH",
+        "network_type": "EVM"
+    },
+    "XDC": {
+        "chain_id": 50,
+        "rpc_url": "https://rpc.xinfin.network",
+        "symbol": "XDC",
+        "network_type": "EVM"
+    }
+}

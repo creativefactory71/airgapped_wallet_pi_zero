@@ -15,6 +15,7 @@ class MenuState:
     DISPLAY_SEED = 5
     CONFIRMATION = 6
     DISPLAY_RESTORED = 7
+    HOME_SCREEN = 8  # ✅ Added Home Screen State
 
 class WalletUI:
     def __init__(self):
@@ -31,6 +32,18 @@ class WalletUI:
         self.restore_menu = ["12 words", "24 words", "Back"]
         self.confirm_menu = ["Yes", "No"]
 
+        # ✅ Add Home Screen Menu Options
+        self.home_screen_options = [
+            "Sign Transaction",
+            "Send Transaction",
+            "Receive Transaction",
+            "Add Custom Network",
+            "Settings",
+            "Device Info",
+            "Back"
+        ]
+        self.home_screen_index = 0  # ✅ Track pagination for 3-line display
+
     def show_splash_screen(self):
         """Displays splash screen and transitions to the main menu."""
         show_text_highlighted(["Doru.co Logo", "Welcome to Secure Wallet"], -1)
@@ -40,25 +53,28 @@ class WalletUI:
 
     def handle_button_press(self, button):
         """Handles user navigation input via button presses."""
+        
         if self.current_state == MenuState.DISPLAY_SEED:
             if button == "UP":
                 self.seed_screen_index = max(0, self.seed_screen_index - 1)
             elif button == "DOWN":
                 total_screens = (len(self.generated_seed_phrase) + 2) // 3
                 self.seed_screen_index = min(total_screens - 1, self.seed_screen_index + 1)
-            elif button == "ENTER":  # Move to confirmation after last seed page
+            elif button == "ENTER":
                 if self.seed_screen_index == (len(self.generated_seed_phrase) + 2) // 3 - 1:
                     self.current_state = MenuState.CONFIRMATION
-                    self.selected_option = 0  # Reset to first option
+                    self.selected_option = 0
             self.update_display()
-        elif self.current_state == MenuState.CONFIRMATION:
+
+        elif self.current_state == MenuState.HOME_SCREEN:  # ✅ Home Screen Navigation
             if button == "UP":
-                self.selected_option = (self.selected_option - 1) % len(self.confirm_menu)  # Toggle Yes/No
+                self.selected_option = (self.selected_option - 1) % len(self.home_screen_options)
             elif button == "DOWN":
-                self.selected_option = (self.selected_option + 1) % len(self.confirm_menu)  # Toggle Yes/No
+                self.selected_option = (self.selected_option + 1) % len(self.home_screen_options)
             elif button == "ENTER":
-                self.execute_selected_option()  # Execute selection
-            self.update_display()
+                self.execute_home_option()
+            self.update_home_display()
+
         else:
             if button == "UP":
                 self.selected_option = (self.selected_option - 1) % self.get_menu_length()
@@ -66,20 +82,19 @@ class WalletUI:
                 self.selected_option = (self.selected_option + 1) % self.get_menu_length()
             elif button == "ENTER":
                 self.execute_selected_option()
-
             self.update_display()
 
     def execute_selected_option(self):
         """Executes the selected menu option."""
         if self.current_state == MenuState.MAIN:
-            if self.selected_option == 0:  # Create Wallet
+            if self.selected_option == 0:
                 self.current_state = MenuState.CREATE_WALLET
-            elif self.selected_option == 1:  # Restore Wallet
+            elif self.selected_option == 1:
                 self.current_state = MenuState.RESTORE_WALLET
             self.selected_option = 0
 
         elif self.current_state == MenuState.CREATE_WALLET:
-            if self.selected_option == 2:  # Back option
+            if self.selected_option == 2:
                 self.go_back_to_main()
             else:
                 seed_length = 12 if self.selected_option == 0 else 24
@@ -89,18 +104,22 @@ class WalletUI:
                 self.selected_option = 0
 
         elif self.current_state == MenuState.RESTORE_WALLET:
-            if self.selected_option == 2:  # Back option
+            if self.selected_option == 2:
                 self.go_back_to_main()
             else:
                 self.enter_seed_words(12 if self.selected_option == 0 else 24)
 
         elif self.current_state == MenuState.DISPLAY_RESTORED:
-            self.go_back_to_main()
+            self.current_state = MenuState.HOME_SCREEN
+            self.selected_option = 0
+            self.update_home_display()
 
         elif self.current_state == MenuState.CONFIRMATION:
-            if self.selected_option == 0:  # Yes
-                self.go_back_to_main()
-            elif self.selected_option == 1:  # No
+            if self.selected_option == 0:
+                self.current_state = MenuState.HOME_SCREEN  # ✅ Redirect to Home Screen
+                self.selected_option = 0
+                self.update_home_display()
+            elif self.selected_option == 1:
                 self.go_back_to_main()
 
     def enter_seed_words(self, word_count):
@@ -134,14 +153,25 @@ class WalletUI:
         self.selected_option = 0
         self.update_display()
 
+    def update_display_seed(self):
+        """Displays 3 words of the seed phrase per screen."""
+        start_index = self.seed_screen_index * 3
+        end_index = min(start_index + 3, len(self.generated_seed_phrase))
+
+        display_lines = [f"{i+1}. {self.generated_seed_phrase[i]}" for i in range(start_index, end_index)]
+        while len(display_lines) < 3:
+            display_lines.append("")
+
+        show_text_highlighted(display_lines, -1)
+
     def get_menu_length(self):
         """Returns the length of the active menu to prevent out-of-range errors."""
         if self.current_state == MenuState.MAIN:
             return len(self.main_menu)
         elif self.current_state in [MenuState.CREATE_WALLET, MenuState.RESTORE_WALLET]:
-            return len(self.wallet_menu)  # Same for restore menu
+            return len(self.wallet_menu)
         elif self.current_state == MenuState.CONFIRMATION:
-            return len(self.confirm_menu)  # Only Yes/No
+            return len(self.confirm_menu)
         return 1
 
     def update_display(self):
@@ -155,25 +185,23 @@ class WalletUI:
         elif self.current_state == MenuState.DISPLAY_SEED:
             self.update_display_seed()
         elif self.current_state == MenuState.CONFIRMATION:
-            show_text_highlighted(["Confirmed?", self.confirm_menu[0], self.confirm_menu[1]], self.selected_option + 1)  # Ensure only Yes/No are navigable
+            show_text_highlighted(["Confirmed?", self.confirm_menu[0], self.confirm_menu[1]], self.selected_option + 1)
+        elif self.current_state == MenuState.HOME_SCREEN:
+            self.update_home_display()  # ✅ Ensure Home Screen is updated properly
 
-    def update_display_seed(self):
-        """Displays 3 words of the seed phrase per screen."""
-        start_index = self.seed_screen_index * 3
-        end_index = min(start_index + 3, len(self.generated_seed_phrase))
 
-        display_lines = [f"{i+1}. {self.generated_seed_phrase[i]}" for i in range(start_index, end_index)]
+    def update_home_display(self):
+        """Displays 3 options at a time from the Home Screen menu."""
+        start_index = (self.selected_option // 3) * 3
+        end_index = min(start_index + 3, len(self.home_screen_options))
+
+        display_lines = [self.home_screen_options[i] for i in range(start_index, end_index)]
+    
+    # Ensure 3 lines are always displayed
         while len(display_lines) < 3:
             display_lines.append("")
 
-        show_text_highlighted(display_lines, -1)
-
-    def go_back_to_main(self):
-        """Returns to the main menu."""
-        self.current_state = MenuState.MAIN
-        self.selected_option = 0
-        self.generated_seed_phrase = []
-        self.update_display()
+        show_text_highlighted(display_lines, self.selected_option % 3)
 
 # === MAIN EXECUTION ===
 if __name__ == "__main__":
