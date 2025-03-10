@@ -49,16 +49,17 @@ class WalletUI:
         self.current_state = MenuState.MAIN
         self.update_display()
 
-    def handle_button_press(self, button):
-        """Handles user navigation input via button presses."""
+        
+def handle_button_press(self, button):
+    """Handles user navigation input via button presses."""
     
-        # Handling seed phrase scrolling
-        if self.current_state == MenuState.DISPLAY_SEED:
-             if button == "UP":
-                 self.seed_screen_index = max(0, self.seed_screen_index - 1)
+    # Handling seed phrase scrolling
+    if self.current_state == MenuState.DISPLAY_SEED:
+        if button == "UP":
+            self.seed_screen_index = max(0, self.seed_screen_index - 1)
         elif button == "DOWN":
-                total_screens = (len(self.generated_seed_phrase) + 2) // 3
-                self.seed_screen_index = min(total_screens - 1, self.seed_screen_index + 1)
+            total_screens = (len(self.generated_seed_phrase) + 2) // 3
+            self.seed_screen_index = min(total_screens - 1, self.seed_screen_index + 1)
         elif button == "ENTER":  # Move to confirmation after last seed page
             if self.seed_screen_index == (len(self.generated_seed_phrase) + 2) // 3 - 1:
                 self.current_state = MenuState.CONFIRMATION
