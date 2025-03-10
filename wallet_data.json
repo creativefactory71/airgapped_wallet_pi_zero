@@ -1,0 +1,20 @@
+{
+    "seed_phrase": [
+        "business",
+        "memory",
+        "liar",
+        "mail",
+        "slim",
+        "metal",
+        "polar",
+        "avoid",
+        "cash",
+        "arch",
+        "right",
+        "gauge"
+    ],
+    "seed_hex": "bc9a22e861d00d3b45eb81162353481745357a12beebb7fd652f4b8426284ca9eecb3591933925ba97b0b23355f97c02fade5a447e2fe192cbf76e1e6a58414c",
+    "private_key": "1baecb5b72d1defe0ba57dc6095f9547fc26fc8b52a7becf2aa9a10e16d5d4d4",
+    "public_key": "ea913e89bb497fbb21c0c24e1caaef7737dbab58a241fd41676ff9b55b1bb158547a86fb73505919a2bed57baff5eeb37d1f10a20cb98a42c95adf64a09b63c3",
+    "eth_address": "0xcEDc346865AEe71A126C9153dC033CfB5fd88211"
+}

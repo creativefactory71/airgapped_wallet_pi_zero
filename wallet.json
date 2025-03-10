@@ -1,0 +1,21 @@
+{
+    "Generated BIP39 Seed Phrase": [
+        "scout",
+        "sketch",
+        "gap",
+        "under",
+        "force",
+        "coconut",
+        "lemon",
+        "spoon",
+        "goat",
+        "toss",
+        "west",
+        "merry"
+    ],
+    "Generated BIP39 Seed (Hex)": "c3e6b1b70344e3a8ada0128a65fe6f846da52025c0e413b15ece3e04f56a3669233c1f282414d80b0d7fbbe16301d7532971353fd503d6e9318954b1b57ce20b",
+    "Master Private Key (WIF Format)": "KzjJxp4T2p75ipZcxKWPLpK4gwmdgtkPFYvG7cVz3Ei3VSsHnzTo",
+    "Master Public Key": "024576cb84b3c09c2715aa8d80fcc57a659b887a733aac75393084be7fa8ef2d6a",
+    "Derived Ethereum Private Key (Hex)": "8af7de694bffbacd987566c0d5db7114c639e8d348e9b35c67b6df151751240d",
+    "Derived Ethereum Address": "0xeCA3C8b857D13fD279C153a08637f9eB2D434E64"
+}
