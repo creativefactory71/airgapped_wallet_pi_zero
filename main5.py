@@ -1,14 +1,15 @@
 import time
-import RPi.GPIO as GPIO
-from display import show_text_highlighted
-from button_handler import setup_buttons, poll_buttons
+import json
+import qrcode
+from blockchain_config import load_blockchain_config
+from display import show_text_highlighted, show_qr_on_display
+from button_handler import poll_keypad
 from wallet_generator import generate_wallet
-from restore_wallet import regenerate_wallet  # Import restore wallet function
-from wallet_qr_generator import get_wallet_qr_data
-from qr_show import generate_qr_for_hdkey  # ✅ Import the QR display function
+from restore_wallet import regenerate_wallet
+from offline_tx_generator import generate_offline_transaction
+from qr_scanner import scan_qr_code
+from sign_transaction import sign_transaction
 
-
-# === MENU STATES ENUM ===
 class MenuState:
     SPLASH = 0
     MAIN = 1
@@ -16,28 +17,27 @@ class MenuState:
     RESTORE_WALLET = 3
     ENTER_SEED = 4
     DISPLAY_SEED = 5
-    CONFIRMATION = 6
-    DISPLAY_RESTORED = 7
-    HOME_SCREEN = 8  # ✅ Added Home Screen State
+    DISPLAY_RESTORED = 6
+    HOME_SCREEN = 7
+    SELECT_CRYPTO = 8
+    SEND_TRANSACTION_INPUT = 9
+    SEND_TRANSACTION_CONFIRM = 10
 
 class WalletUI:
     def __init__(self):
-        """Initialize menu system and GPIO buttons."""
         self.current_state = MenuState.SPLASH
         self.selected_option = 0
+        self.generated_wallet = {}
         self.generated_seed_phrase = []
-        self.entered_seed_phrase = []  # Stores entered seed words
-        self.seed_screen_index = 0  # Track which group of 3 words is shown
+        self.entered_seed_phrase = []
+        self.seed_screen_index = 0
 
-        # Define menus
         self.main_menu = ["Create Wallet", "Restore Wallet"]
         self.wallet_menu = ["12 words", "24 words", "Back"]
         self.restore_menu = ["12 words", "24 words", "Back"]
-        self.confirm_menu = ["Yes", "No"]
 
-        # ✅ Add Home Screen Menu Options
         self.home_screen_options = [
-            "Sign Transaction",
+            
             "Send Transaction",
             "Receive Transaction",
             "Add Custom Network",
@@ -45,18 +45,18 @@ class WalletUI:
             "Device Info",
             "Back"
         ]
-        self.home_screen_index = 0  # ✅ Track pagination for 3-line display
+
+        self.tx_input_field = "receiver"
+        self.tx_receiver = ""
+        self.tx_amount = ""
 
     def show_splash_screen(self):
-        """Displays splash screen and transitions to the main menu."""
         show_text_highlighted(["Doru.co Logo", "Welcome to Secure Wallet"], -1)
         time.sleep(3)
         self.current_state = MenuState.MAIN
         self.update_display()
 
     def handle_button_press(self, button):
-        """Handles user navigation input via button presses."""
-        
         if self.current_state == MenuState.DISPLAY_SEED:
             if button == "UP":
                 self.seed_screen_index = max(0, self.seed_screen_index - 1)
@@ -65,11 +65,12 @@ class WalletUI:
                 self.seed_screen_index = min(total_screens - 1, self.seed_screen_index + 1)
             elif button == "ENTER":
                 if self.seed_screen_index == (len(self.generated_seed_phrase) + 2) // 3 - 1:
-                    self.current_state = MenuState.CONFIRMATION
+                    self.current_state = MenuState.HOME_SCREEN
                     self.selected_option = 0
+                    self.update_home_display()
             self.update_display()
 
-        elif self.current_state == MenuState.HOME_SCREEN:  # ✅ Home Screen Navigation
+        elif self.current_state == MenuState.HOME_SCREEN:
             if button == "UP":
                 self.selected_option = (self.selected_option - 1) % len(self.home_screen_options)
             elif button == "DOWN":
@@ -77,6 +78,44 @@ class WalletUI:
             elif button == "ENTER":
                 self.execute_home_option()
             self.update_home_display()
+
+        elif self.current_state == MenuState.SEND_TRANSACTION_INPUT:
+            if button == "ENTER":
+                if self.tx_input_field == "receiver":
+                    self.tx_input_field = "amount"
+                elif self.tx_input_field == "amount":
+                    success = generate_offline_transaction(
+                        self.get_sender_address_from_wallet(),
+                        self.tx_receiver,
+                        self.tx_amount
+                    )
+                    if success:
+                        private_key = self.generated_wallet.get("private_key")
+                        if private_key:
+                            sign_transaction(private_key)
+                        self.go_back_to_main()
+                    else:
+                        self.tx_receiver = ""
+                        self.tx_amount = ""
+                        self.tx_input_field = "receiver"
+                        self.update_transaction_input_display()
+                    return
+            elif button == "BACKSPACE":
+                if self.tx_input_field == "receiver" and len(self.tx_receiver) > 0:
+                    self.tx_receiver = self.tx_receiver[:-1]
+                elif self.tx_input_field == "amount" and len(self.tx_amount) > 0:
+                    self.tx_amount = self.tx_amount[:-1]
+            elif button in ["D", "#"]:
+                self.receive_address_via_qr()
+            elif button == "*" and self.tx_input_field == "amount":
+                if "." not in self.tx_amount:
+                    self.tx_amount += "."
+            elif button.isdigit():
+                if self.tx_input_field == "receiver":
+                    self.tx_receiver += button
+                elif self.tx_input_field == "amount":
+                    self.tx_amount += button
+            self.update_transaction_input_display()
 
         else:
             if button == "UP":
@@ -87,8 +126,14 @@ class WalletUI:
                 self.execute_selected_option()
             self.update_display()
 
+    def receive_address_via_qr(self):
+        scanned_address = scan_qr_code()
+        if scanned_address:
+            self.tx_receiver = scanned_address
+            self.tx_input_field = "amount"
+            self.update_transaction_input_display()
+
     def execute_selected_option(self):
-        """Executes the selected menu option."""
         if self.current_state == MenuState.MAIN:
             if self.selected_option == 0:
                 self.current_state = MenuState.CREATE_WALLET
@@ -101,11 +146,12 @@ class WalletUI:
                 self.go_back_to_main()
             else:
                 seed_length = 12 if self.selected_option == 0 else 24
-                self.generated_wallet = generate_wallet(seed_length)  # ✅ Store full wallet data
-                self.generated_seed_phrase = self.generated_wallet["seed_phrase"]  # ✅ Extract only the seed phrase
+                self.generated_wallet = generate_wallet(seed_length, "xdc")
+                self.generated_seed_phrase = self.generated_wallet["seed_phrase"]
                 self.seed_screen_index = 0
                 self.current_state = MenuState.DISPLAY_SEED
                 self.selected_option = 0
+
         elif self.current_state == MenuState.RESTORE_WALLET:
             if self.selected_option == 2:
                 self.go_back_to_main()
@@ -117,40 +163,17 @@ class WalletUI:
             self.selected_option = 0
             self.update_home_display()
 
-        elif self.current_state == MenuState.CONFIRMATION:
-            if self.selected_option == 0:  # ✅ If "Yes" is selected
-                print("\n[INFO] Generating Wallet QR Code...")
-
-                if hasattr(self, "generated_wallet") and "private_key" in self.generated_wallet:
-                    private_key = self.generated_wallet["private_key"]
-                    print(f"🔑 HD Private Key: {private_key}")  # ✅ Debugging: Print private key
-
-                # ✅ Pass only the private key to QR generator
-                    generate_qr_for_hdkey(private_key)
-                else:
-                    print("❌ Error: Wallet not generated or incorrect format!")
-
-            # ✅ Redirect to Home Screen
-                self.current_state = MenuState.HOME_SCREEN  
-                self.update_home_display()
-
-            elif self.selected_option == 1:  # If "No" is selected
-                self.go_back_to_main()
-
     def enter_seed_words(self, word_count):
-        """Allows the user to enter a seed phrase via keyboard."""
         print(f"\n[INFO] Enter your {word_count}-word seed phrase:")
         entered_seed = []
         for i in range(word_count):
             word = input(f"Word {i+1}: ").strip()
             entered_seed.append(word)
 
-        # Validate and restore wallet
         self.entered_seed_phrase = entered_seed
         self.restore_wallet()
 
     def restore_wallet(self):
-        """Calls the restore function and displays the wallet details."""
         try:
             restored_wallet = regenerate_wallet(self.entered_seed_phrase)
             display_lines = [
@@ -168,29 +191,50 @@ class WalletUI:
         self.selected_option = 0
         self.update_display()
 
-    def update_display_seed(self):
-        """Displays 3 words of the seed phrase per screen."""
-        start_index = self.seed_screen_index * 3
-        end_index = min(start_index + 3, len(self.generated_seed_phrase))
+    def execute_home_option(self):
+        option = self.home_screen_options[self.selected_option]
+        if option == "Back":
+            self.go_back_to_main()
+        elif option == "Send Transaction":
+            self.current_state = MenuState.SEND_TRANSACTION_INPUT
+            self.tx_input_field = "receiver"
+            self.tx_receiver = ""
+            self.tx_amount = ""
+            self.update_transaction_input_display()
+        elif option == "Receive Transaction":
+            self.show_receive_qr()
+        else:
+            show_text_highlighted(["Selected:", option], -1)
+            time.sleep(2)
+            self.update_home_display()
 
-        display_lines = [f"{i+1}. {self.generated_seed_phrase[i]}" for i in range(start_index, end_index)]
-        while len(display_lines) < 3:
-            display_lines.append("")
+    def show_receive_qr(self):
+        address = self.get_sender_address_from_wallet()
+        qr = qrcode.QRCode(box_size=2, border=1)
+        qr.add_data(address)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="black", back_color="white")
+        show_qr_on_display(img)
+        time.sleep(5)
+        self.update_home_display()
 
-        show_text_highlighted(display_lines, -1)
+    def update_transaction_input_display(self):
+        if self.tx_input_field == "receiver":
+            show_text_highlighted(["To Address:", self.tx_receiver[-21:], "ENTER=Next | D=Scan"], -1)
+        elif self.tx_input_field == "amount":
+            show_text_highlighted(["Amount (ETH):", self.tx_amount, "* = dot"], -1)
+
+    def get_sender_address_from_wallet(self):
+        return self.generated_wallet.get("xdc_address", "0x0000000000000000000000000000000000000000")
 
     def get_menu_length(self):
-        """Returns the length of the active menu to prevent out-of-range errors."""
         if self.current_state == MenuState.MAIN:
             return len(self.main_menu)
         elif self.current_state in [MenuState.CREATE_WALLET, MenuState.RESTORE_WALLET]:
             return len(self.wallet_menu)
-        elif self.current_state == MenuState.CONFIRMATION:
-            return len(self.confirm_menu)
         return 1
 
     def update_display(self):
-        """Updates the UI based on the current state."""
         if self.current_state == MenuState.MAIN:
             show_text_highlighted(self.main_menu, self.selected_option)
         elif self.current_state == MenuState.CREATE_WALLET:
@@ -199,33 +243,39 @@ class WalletUI:
             show_text_highlighted(self.restore_menu, self.selected_option)
         elif self.current_state == MenuState.DISPLAY_SEED:
             self.update_display_seed()
-        elif self.current_state == MenuState.CONFIRMATION:
-            show_text_highlighted(["Confirmed?", self.confirm_menu[0], self.confirm_menu[1]], self.selected_option + 1)
         elif self.current_state == MenuState.HOME_SCREEN:
-            self.update_home_display()  # ✅ Ensure Home Screen is updated properly
+            self.update_home_display()
 
-
-    def update_home_display(self):
-        """Displays 3 options at a time from the Home Screen menu."""
-        start_index = (self.selected_option // 3) * 3
-        end_index = min(start_index + 3, len(self.home_screen_options))
-
-        display_lines = [self.home_screen_options[i] for i in range(start_index, end_index)]
-    
-    # Ensure 3 lines are always displayed
+    def update_display_seed(self):
+        start_index = self.seed_screen_index * 3
+        end_index = min(start_index + 3, len(self.generated_seed_phrase))
+        display_lines = [f"{i+1}. {self.generated_seed_phrase[i]}" for i in range(start_index, end_index)]
         while len(display_lines) < 3:
             display_lines.append("")
+        show_text_highlighted(display_lines, -1)
 
+    def update_home_display(self):
+        start_index = (self.selected_option // 3) * 3
+        end_index = min(start_index + 3, len(self.home_screen_options))
+        display_lines = [self.home_screen_options[i] for i in range(start_index, end_index)]
+        while len(display_lines) < 3:
+            display_lines.append("")
         show_text_highlighted(display_lines, self.selected_option % 3)
 
-# === MAIN EXECUTION ===
+    def update_crypto_display(self):
+        crypto_options = ["BTC", "ETH", "XDC"]
+        show_text_highlighted(crypto_options, self.selected_option)
+
+    def go_back_to_main(self):
+        self.current_state = MenuState.HOME_SCREEN
+        self.selected_option = 0
+        self.generated_seed_phrase = []
+        self.update_display()
+
 if __name__ == "__main__":
     try:
         wallet_ui = WalletUI()
-        setup_buttons()
         wallet_ui.show_splash_screen()
-        poll_buttons(wallet_ui.handle_button_press)
+        poll_keypad(wallet_ui.handle_button_press)
     except KeyboardInterrupt:
         print("\n[DEBUG] Exiting...")
-    finally:
-        GPIO.cleanup()

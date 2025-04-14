@@ -1,36 +1,49 @@
-import RPi.GPIO as GPIO
 import time
-from config import BTN_UP, BTN_DOWN, BTN_ENTER
+import board
+import digitalio
+import adafruit_matrixkeypad
 
-# Define a debounce delay in seconds
-DEBOUNCE_DELAY = 0.5  
-last_pressed_time = {"UP": 0, "DOWN": 0, "ENTER": 0}
+# Keypad pin setup
+ROW_PINS = [digitalio.DigitalInOut(x) for x in (board.D5, board.D6, board.D13, board.D19)]
+COL_PINS = [digitalio.DigitalInOut(x) for x in (board.D12, board.D16, board.D20, board.D21)]
 
-def setup_buttons():
-    """Initialize GPIO buttons"""
-    GPIO.setmode(GPIO.BCM)
-    GPIO.setup(BTN_UP, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(BTN_DOWN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    GPIO.setup(BTN_ENTER, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+keys = [
+    ["1", "2", "3", "A"],
+    ["4", "5", "6", "B"],
+    ["7", "8", "9", "C"],
+    ["*", "0", "#", "D"]
+]
 
-def poll_buttons(callback):
-    """Continuously poll button states and trigger callback with debounce"""
+keypad = adafruit_matrixkeypad.Matrix_Keypad(ROW_PINS, COL_PINS, keys)
+
+# Debounce tracking
+last_pressed = None
+last_time = 0
+DEBOUNCE_TIME = 0.3  # seconds
+
+def poll_keypad(callback):
+    """Poll the keypad and send keypresses to callback."""
+    global last_pressed, last_time
     while True:
+        pressed = keypad.pressed_keys
         current_time = time.time()
-        
-        if GPIO.input(BTN_UP) == GPIO.LOW and (current_time - last_pressed_time["UP"]) > DEBOUNCE_DELAY:
-            last_pressed_time["UP"] = current_time
-            # print("BTN_UP pressed")  # Debug print
-            callback("UP")
 
-        elif GPIO.input(BTN_DOWN) == GPIO.LOW and (current_time - last_pressed_time["DOWN"]) > DEBOUNCE_DELAY:
-            last_pressed_time["DOWN"] = current_time
-            # print("BTN_DOWN pressed")  # Debug print
-            callback("DOWN")
+        if pressed:
+            key = pressed[0]
 
-        elif GPIO.input(BTN_ENTER) == GPIO.LOW and (current_time - last_pressed_time["ENTER"]) > DEBOUNCE_DELAY:
-            last_pressed_time["ENTER"] = current_time
-            # print("BTN_ENTER pressed")  # Debug print
-            callback("ENTER")
+            # Debounce logic
+            if key != last_pressed or (current_time - last_time) > DEBOUNCE_TIME:
+                last_pressed = key
+                last_time = current_time
 
-        time.sleep(0.1)  # Small delay to prevent high CPU usage
+                # Special key mapping
+                if key == "A":
+                    callback("UP")
+                elif key == "B":
+                    callback("ENTER")
+                elif key == "C":
+                    callback("DOWN")
+                else:
+                    callback(key)  # Pass any other key directly
+
+        time.sleep(0.1)

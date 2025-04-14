@@ -1,55 +1,43 @@
-from mnemonic import Mnemonic
-import bip32utils
-import binascii
-from eth_keys import keys
-from eth_utils import to_checksum_address, keccak
+from bip_utils import (
+    Bip39MnemonicGenerator, Bip39SeedGenerator, Bip39WordsNum,
+    Bip32Slip10Secp256k1, EthAddrEncoder
+)
 
-def generate_wallet(word_count=12):
-    """Generates a BIP39 seed phrase and derives wallet details."""
+def generate_wallet(word_count=12, coin="xdc"):
     if word_count not in [12, 24]:
         raise ValueError("Word count must be 12 or 24.")
+    if coin.lower() != "xdc":
+        raise ValueError("Only 'xdc' is currently supported in this version.")
 
-    # Step 1: Generate a BIP39 Seed Phrase
-    mnemo = Mnemonic("english")
-    strength = 128 if word_count == 12 else 256  # 128-bit for 12 words, 256-bit for 24 words
-    seed_phrase = mnemo.generate(strength=strength)
-    
-    # Step 2: Convert Mnemonic to a 512-bit Seed
-    passphrase = ""  # Optional for extra security
-    seed = mnemo.to_seed(seed_phrase, passphrase)
-    
-    # Step 3: Derive the Master Private Key using BIP32
-    master_key = bip32utils.BIP32Key.fromEntropy(seed)
+    # ✅ Generate mnemonic
+    words_num = Bip39WordsNum.WORDS_NUM_12 if word_count == 12 else Bip39WordsNum.WORDS_NUM_24
+    mnemonic = Bip39MnemonicGenerator().FromWordsNumber(words_num)
 
-    # Step 4: Derive Child Keys (BIP44 for Ethereum)
-    purpose = master_key.ChildKey(44 + bip32utils.BIP32_HARDEN)
-    coin_type = purpose.ChildKey(60 + bip32utils.BIP32_HARDEN)  # 60 for Ethereum
-    account = coin_type.ChildKey(0 + bip32utils.BIP32_HARDEN)  # First account
-    change = account.ChildKey(0)  # External chain (0)
-    address_index = change.ChildKey(0)  # First Ethereum address
+    # ✅ Generate seed
+    seed = Bip39SeedGenerator(mnemonic).Generate()
 
-    # Step 5: Extract the Private Key for Ethereum
-    eth_private_key = binascii.hexlify(address_index.PrivateKey()).decode()
+    # ✅ Derive XDC key using BIP32 path m/44'/550'/0'/0/0
+    bip32 = Bip32Slip10Secp256k1.FromSeed(seed)
+    xdc_key = bip32.DerivePath("m/44'/550'/0'/0/0")
 
-    # Step 6: Generate Ethereum Public Address
-    priv_key_bytes = binascii.unhexlify(eth_private_key)
-    eth_private_key_obj = keys.PrivateKey(priv_key_bytes)
-    
-    eth_public_key = eth_private_key_obj.public_key
-    eth_address = keccak(eth_public_key.to_bytes())[12:]  # Last 20 bytes of Keccak-256 hash
-    eth_checksum_address = to_checksum_address("0x" + eth_address.hex())
-    print(f"🔹 Seed seed_phrase : {seed_phrase.split()}")
-    print(f"🔹 Seed Hex: {seed.hex()}")
-    print(f"🔹 Private Key: {eth_private_key}")
-    print(f"🔹 Public Key: {eth_public_key.to_bytes().hex()}")
-    print(f"🔹 ETH Address: {eth_checksum_address}\n")
+    # ✅ Extract keys
+    private_key = xdc_key.PrivateKey().Raw().ToHex()
+    public_key = xdc_key.PublicKey().RawCompressed().ToHex()
+    raw_address = EthAddrEncoder.EncodeKey(xdc_key.PublicKey().RawUncompressed().ToBytes()).replace("0x", "")
+    address_with_0x = "0x" + raw_address  # 👈 Add 0x prefix only
 
+    # ✅ Print wallet details
+    print("\n🔐 === Wallet Details ===")
+    print(f"🧠 Seed Phrase       : {mnemonic.ToStr().split()}")
+    print(f"🔹 Seed Hex          : {seed.hex()}")
+    print(f"🔑 Private Key       : {private_key}")
+    print(f"🔓 Public Key (comp) : {public_key}")
+    print(f"🏠 XDC Address (0x)  : {address_with_0x}\n")  # 👈 Address with only 0x prefix
 
-    # Return wallet details
     return {
-        "seed_phrase": seed_phrase.split(),  # Split into individual words
+        "seed_phrase": mnemonic.ToStr().split(),
         "seed_hex": seed.hex(),
-        "private_key": eth_private_key,
-        "public_key": eth_public_key.to_bytes().hex(),
-        "eth_address": eth_checksum_address
+        "private_key": private_key,
+        "public_key_compressed": public_key,
+        "xdc_address": address_with_0x,
     }
