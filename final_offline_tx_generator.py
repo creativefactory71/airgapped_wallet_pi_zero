@@ -1,32 +1,21 @@
 import json
 import time
-import os  # ✅ Import os to delete file
 from display import show_text_highlighted
 
-# Mapping coin name to chain ID
-CHAIN_IDS = {
-    "XDC": 50,
-    "ETHEREUM": 11155111
-}
+# Final Offline Transaction Generator
 
-def generate_offline_transaction(sender_address, receiver_address, amount_eth, nonce_input, coin):
+def generate_offline_transaction(sender_address, receiver_address, amount_eth, nonce_input, chain_id, coin_name="XDC"):
     try:
         # Validate receiver address
         if not receiver_address.startswith("0x") or len(receiver_address) != 42:
             raise ValueError("Receiver address format invalid")
 
-        # Convert ETH to wei manually
+        # Convert amount to wei manually
         value = int(float(amount_eth) * 1e18)
         nonce = int(nonce_input)
 
-        # Set chain ID from selected coin
-        coin_upper = coin.upper()
-        if coin_upper not in CHAIN_IDS:
-            raise ValueError("Unsupported coin selected")
-        chain_id = CHAIN_IDS[coin_upper]
-
     except Exception as e:
-        show_text_highlighted(["❌ Invalid TX Input", str(e)], -1)
+        show_text_highlighted(["\u274C Invalid TX Input", str(e)], -1)
         time.sleep(2)
         return False
 
@@ -45,16 +34,10 @@ def generate_offline_transaction(sender_address, receiver_address, amount_eth, n
     }
 
     try:
-        # ✅ Before saving, delete previous unsigned_tx.json if exists
-        if os.path.exists("unsigned_tx.json"):
-            os.remove("unsigned_tx.json")
-            print("[INFO] Old unsigned_tx.json deleted")
-
-        # Save new unsigned transaction
         with open("unsigned_tx.json", "w") as f:
             json.dump(tx, f)
 
-        print("\n🔒 Offline Transaction Preview:")
+        print("\n\U0001F512 Offline Transaction Preview:")
         print(f"Nonce     : {tx['nonce']}")
         print(f"To        : {tx['to']}")
         print(f"Value     : {tx['value']} wei")
@@ -64,15 +47,15 @@ def generate_offline_transaction(sender_address, receiver_address, amount_eth, n
         print(f"Data      : {tx['data']}")
 
         preview = [
-            "TX Saved ✅",
+            "TX Saved \u2705",
             f"To: {receiver_address[:10]}...",
-            f"Value: {amount_eth} {coin_upper}"
+            f"Value: {amount_eth} {coin_name.upper()}"
         ]
         show_text_highlighted(preview, -1)
         time.sleep(3)
         return True
 
     except Exception as e:
-        show_text_highlighted(["❌ Save Failed", str(e)], -1)
+        show_text_highlighted(["\u274C Save Failed", str(e)], -1)
         time.sleep(2)
         return False
